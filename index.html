@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spritz Speed Reader</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root {
+    --bg: #1a1a1a;
+    --surface: #252525;
+    --surface2: #2f2f2f;
+    --border: #3a3a3a;
+    --text: #e0e0e0;
+    --text-dim: #888;
+    --accent: #e63946;
+    --accent-hover: #ff4d5a;
+    --blue: #4a9eff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* --- Upload Screen --- */
+  #upload-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 30px;
+  }
+
+  #upload-screen h1 {
+    font-size: 2.4rem;
+    font-weight: 300;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  #upload-screen h1 span { color: var(--accent); font-weight: 700; }
+
+  .upload-zone {
+    width: 500px;
+    max-width: 90vw;
+    padding: 60px 40px;
+    border: 2px dashed var(--border);
+    border-radius: 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: var(--surface);
+  }
+
+  .upload-zone:hover, .upload-zone.dragover {
+    border-color: var(--accent);
+    background: #2a2020;
+  }
+
+  .upload-zone p { color: var(--text-dim); margin-top: 12px; font-size: 0.95rem; }
+  .upload-zone .icon { font-size: 3rem; margin-bottom: 10px; }
+
+  #upload-input { display: none; }
+
+  .loading-msg {
+    color: var(--accent);
+    font-size: 1.1rem;
+    display: none;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* --- Reader Screen --- */
+  #reader-screen { display: none; flex-direction: column; height: 100vh; }
+
+  /* Top bar */
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    min-height: 50px;
+    flex-shrink: 0;
+  }
+
+  .top-bar .title {
+    font-size: 0.95rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 40%;
+  }
+
+  .top-bar .wpm-display {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text);
+    min-width: 130px;
+    text-align: center;
+  }
+
+  .top-bar .wpm-display span { color: var(--accent); font-size: 0.85rem; font-weight: 400; }
+
+  .top-bar .actions { display: flex; gap: 8px; }
+
+  /* TOC panel */
+  .toc-panel {
+    position: fixed;
+    top: 0; left: -360px;
+    width: 350px;
+    height: 100vh;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    z-index: 100;
+    transition: left 0.3s ease;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .toc-panel.open { left: 0; }
+
+  .toc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .toc-header h2 { font-size: 1.1rem; font-weight: 600; }
+
+  .toc-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px 0;
+  }
+
+  .toc-item {
+    padding: 12px 20px;
+    cursor: pointer;
+    transition: background 0.2s;
+    font-size: 0.92rem;
+    color: var(--text-dim);
+    border-left: 3px solid transparent;
+  }
+
+  .toc-item:hover { background: var(--surface2); color: var(--text); }
+  .toc-item.active { border-left-color: var(--accent); color: var(--text); background: var(--surface2); }
+
+  .toc-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 99;
+    display: none;
+  }
+
+  .toc-overlay.open { display: block; }
+
+  /* RSVP Display */
+  .rsvp-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .rsvp-word-wrapper {
+    position: relative;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 4rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+    min-height: 5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+  }
+
+  /* The focus line / pivot markers */
+  .pivot-line {
+    position: absolute;
+    width: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--accent);
+    opacity: 0.3;
+  }
+
+  .pivot-line.top { top: 0; height: 18px; }
+  .pivot-line.bottom { bottom: 0; height: 18px; }
+
+  .rsvp-word {
+    display: inline-block;
+    color: #ffffff;
+  }
+
+  .rsvp-word .orp { color: var(--accent); }
+
+  /* Progress bar */
+  .progress-container {
+    width: 100%;
+    height: 4px;
+    background: var(--surface);
+    flex-shrink: 0;
+    cursor: pointer;
+    position: relative;
+  }
+
+  .progress-bar {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.1s linear;
+  }
+
+  .chapter-label {
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    background: var(--surface);
+    padding: 2px 12px;
+    border-radius: 4px;
+    pointer-events: none;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .chapter-label.visible { opacity: 1; }
+
+  /* Bottom controls */
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 20px 20px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .controls-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .btn:hover { background: #3a3a3a; border-color: #555; }
+  .btn:active { transform: scale(0.97); }
+
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    padding: 12px 28px;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .btn.primary:hover { background: var(--accent-hover); }
+
+  .btn.small { padding: 6px 10px; font-size: 0.78rem; }
+
+  /* Speed slider */
+  .speed-control {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  .speed-control label { font-size: 0.8rem; color: var(--text-dim); white-space: nowrap; }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    flex: 1;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    outline: none;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: none;
+  }
+
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    padding: 0 4px;
+  }
+
+  /* Keyboard hints */
+  .kbd-hints {
+    position: absolute;
+    bottom: 8px;
+    right: 14px;
+    font-size: 0.7rem;
+    color: #555;
+  }
+
+  kbd {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.68rem;
+    font-family: inherit;
+  }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .rsvp-word-wrapper { font-size: 2.4rem; }
+    .top-bar .title { max-width: 30%; font-size: 0.8rem; }
+    .btn { padding: 8px 10px; font-size: 0.78rem; }
+    .btn.primary { padding: 10px 20px; }
+    .toc-panel { width: 85vw; left: -85vw; }
+  }
+</style>
+</head>
+<body>
+
+<!-- UPLOAD SCREEN -->
+<div id="upload-screen">
+  <h1><span>Spritz</span> Reader</h1>
+  <div class="upload-zone" id="upload-zone">
+    <div class="icon">&#128214;</div>
+    <strong>Drop an EPUB or PDF here</strong>
+    <p>or click to browse</p>
+  </div>
+  <input type="file" id="upload-input" accept=".epub,.pdf">
+  <div class="loading-msg" id="loading-msg">
+    <div class="spinner"></div>
+    <span>Parsing file...</span>
+  </div>
+</div>
+
+<!-- READER SCREEN -->
+<div id="reader-screen">
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button class="btn small" id="toc-btn" title="Table of Contents">&#9776; TOC</button>
+      <div class="title" id="book-title">—</div>
+    </div>
+    <div class="wpm-display"><span id="wpm-val">250</span> <span>WPM</span></div>
+    <div class="actions">
+      <button class="btn small" id="new-file-btn" title="Open new file">&#128194; New</button>
+    </div>
+  </div>
+
+  <!-- TOC Sidebar -->
+  <div class="toc-overlay" id="toc-overlay"></div>
+  <div class="toc-panel" id="toc-panel">
+    <div class="toc-header">
+      <h2>Chapters</h2>
+      <button class="btn small" id="toc-close">&#10005;</button>
+    </div>
+    <div class="toc-list" id="toc-list"></div>
+  </div>
+
+  <!-- RSVP Display -->
+  <div class="rsvp-container" id="rsvp-container">
+    <div class="pivot-line top"></div>
+    <div class="pivot-line bottom"></div>
+    <div class="rsvp-word-wrapper">
+      <div class="rsvp-word" id="rsvp-word">Ready</div>
+    </div>
+    <div class="kbd-hints">
+      <kbd>Space</kbd> play/pause &nbsp;
+      <kbd>&#8592;</kbd><kbd>&#8594;</kbd> &#177;10s &nbsp;
+      <kbd>&#8593;</kbd><kbd>&#8595;</kbd> speed
+    </div>
+  </div>
+
+  <!-- Progress -->
+  <div class="progress-container" id="progress-container">
+    <div class="progress-bar" id="progress-bar"></div>
+    <div class="chapter-label" id="chapter-label"></div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="controls-row">
+      <button class="btn" id="skip-back-30" title="Back 30s">&#9664;&#9664; 30s</button>
+      <button class="btn" id="skip-back-10" title="Back 10s">&#9664; 10s</button>
+      <button class="btn primary" id="play-btn">&#9654; Play</button>
+      <button class="btn" id="skip-fwd-10" title="Forward 10s">10s &#9654;</button>
+      <button class="btn" id="skip-fwd-30" title="Forward 30s">30s &#9654;&#9654;</button>
+    </div>
+    <div class="speed-control">
+      <label>100</label>
+      <input type="range" id="speed-slider" min="100" max="900" step="25" value="250">
+      <label>900</label>
+    </div>
+    <div class="info-row">
+      <span id="position-info">Word 0 / 0</span>
+      <span id="time-remaining">—</span>
+    </div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const state = {
+  words: [],          // array of word strings
+  chapters: [],       // [{title, wordIndex}]
+  currentIndex: 0,
+  wpm: 250,
+  playing: false,
+  timer: null,
+  fileName: ''
+};
+
+// --- ORP Calculation (center of word) ---
+function getORP(word) {
+  const len = word.length;
+  if (len <= 1) return 0;
+  return Math.floor((len - 1) / 2);
+}
+
+// --- Measure true monospace character width once ---
+let _measuredCharWidth = null;
+function getCharWidth() {
+  if (_measuredCharWidth !== null) return _measuredCharWidth;
+  const probe = document.createElement('span');
+  probe.style.cssText = `
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 4rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    position: absolute;
+    visibility: hidden;
+    white-space: nowrap;
+  `;
+  probe.textContent = 'MMMMMMMMMM'; // 10 chars
+  document.body.appendChild(probe);
+  _measuredCharWidth = probe.offsetWidth / 10;
+  document.body.removeChild(probe);
+  return _measuredCharWidth;
+}
+
+// Remeasure on resize (font size might be different on mobile etc.)
+window.addEventListener('resize', () => { _measuredCharWidth = null; });
+
+// --- Display a word with ORP alignment ---
+function displayWord(word) {
+  const el = document.getElementById('rsvp-word');
+  if (!word) { el.innerHTML = ''; return; }
+
+  const orp = getORP(word);
+
+  // Build the word HTML with the ORP letter wrapped
+  let html = '';
+  for (let i = 0; i < word.length; i++) {
+    if (i === orp) {
+      html += `<span class="orp">${word[i]}</span>`;
+    } else {
+      html += word[i];
+    }
+  }
+  el.innerHTML = html;
+
+  // Position the word so the CENTER of the ORP character sits at
+  // exactly 50% of the container — every single time, no drift.
+  //
+  // Strategy: el is position:absolute. We set left:50% so el's left
+  // edge starts at container center, then use transform:translateX
+  // to shift left by exactly (orp + 0.5) measured character widths.
+  // This puts the ORP char's center at the pivot — using the REAL
+  // measured width, not an approximation.
+
+  const charW = getCharWidth();
+  const shiftPx = (orp + 0.5) * charW;
+
+  el.style.position = 'absolute';
+  el.style.left = '50%';
+  el.style.transform = `translateX(-${shiftPx}px)`;
+}
+
+// --- Update UI ---
+function updateUI() {
+  const total = state.words.length;
+  const idx = state.currentIndex;
+  document.getElementById('position-info').textContent = `Word ${idx} / ${total}`;
+
+  const pct = total > 0 ? (idx / total) * 100 : 0;
+  document.getElementById('progress-bar').style.width = pct + '%';
+
+  // Time remaining
+  const wordsLeft = total - idx;
+  const minsLeft = wordsLeft / state.wpm;
+  const m = Math.floor(minsLeft);
+  const s = Math.round((minsLeft - m) * 60);
+  document.getElementById('time-remaining').textContent = `${m}m ${s}s remaining`;
+
+  // Chapter label
+  let currentChapter = '';
+  for (let i = state.chapters.length - 1; i >= 0; i--) {
+    if (idx >= state.chapters[i].wordIndex) {
+      currentChapter = state.chapters[i].title;
+      break;
+    }
+  }
+  const cl = document.getElementById('chapter-label');
+  cl.textContent = currentChapter;
+
+  // Highlight active TOC item
+  document.querySelectorAll('.toc-item').forEach((item, i) => {
+    item.classList.toggle('active', state.chapters[i] &&
+      idx >= state.chapters[i].wordIndex &&
+      (i === state.chapters.length - 1 || idx < state.chapters[i + 1].wordIndex));
+  });
+}
+
+function showWord() {
+  if (state.currentIndex >= state.words.length) {
+    pause();
+    displayWord('END');
+    return;
+  }
+  displayWord(state.words[state.currentIndex]);
+  updateUI();
+}
+
+// --- Playback ---
+function getInterval() {
+  return 60000 / state.wpm; // ms per word
+}
+
+function play() {
+  if (state.words.length === 0) return;
+  if (state.currentIndex >= state.words.length) state.currentIndex = 0;
+  state.playing = true;
+  document.getElementById('play-btn').innerHTML = '&#9646;&#9646; Pause';
+  tick();
+}
+
+function pause() {
+  state.playing = false;
+  clearTimeout(state.timer);
+  document.getElementById('play-btn').innerHTML = '&#9654; Play';
+}
+
+function tick() {
+  if (!state.playing) return;
+  showWord();
+  state.currentIndex++;
+  if (state.currentIndex > state.words.length) {
+    pause();
+    return;
+  }
+  // Adjust delay for punctuation
+  let delay = getInterval();
+  const word = state.words[state.currentIndex - 1] || '';
+  if (/[.!?]$/.test(word)) delay *= 2.2;
+  else if (/[,;:]$/.test(word)) delay *= 1.5;
+  state.timer = setTimeout(tick, delay);
+}
+
+function togglePlay() {
+  if (state.playing) pause(); else play();
+}
+
+// --- Seeking ---
+function skipWords(n) {
+  state.currentIndex = Math.max(0, Math.min(state.words.length - 1, state.currentIndex + n));
+  showWord();
+}
+
+function skipSeconds(seconds) {
+  const wordsToSkip = Math.round((state.wpm / 60) * seconds);
+  skipWords(wordsToSkip);
+}
+
+function jumpToWord(index) {
+  state.currentIndex = Math.max(0, Math.min(state.words.length - 1, index));
+  showWord();
+}
+
+// --- WPM ---
+function setWPM(val) {
+  state.wpm = val;
+  document.getElementById('wpm-val').textContent = val;
+  document.getElementById('speed-slider').value = val;
+  updateUI();
+}
+
+// --- File Parsing ---
+
+// Strip HTML/XHTML tags using regex (more reliable than DOM for EPUB XHTML)
+function stripHTML(html) {
+  // Remove all tags
+  let text = html.replace(/<[^>]*>/g, ' ');
+  // Decode common HTML entities
+  text = text.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(n))
+    .replace(/&nbsp;/g, ' ').replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  // Collapse whitespace
+  text = text.replace(/\s+/g, ' ').trim();
+  return text;
+}
+
+// Tokenize text into words
+function tokenize(text) {
+  return text.split(/\s+/).filter(w => w.length > 0);
+}
+
+// Resolve a path relative to a base directory inside the zip
+function resolvePath(baseDir, href) {
+  // Handle absolute paths
+  if (href.startsWith('/')) return href.substring(1);
+  // Combine and normalize
+  let path = baseDir + href;
+  // Resolve ../ segments
+  const parts = path.split('/');
+  const resolved = [];
+  for (const p of parts) {
+    if (p === '..') resolved.pop();
+    else if (p !== '.' && p !== '') resolved.push(p);
+  }
+  return resolved.join('/');
+}
+
+// Count words in stripped HTML content before a given raw HTML position
+// Used to map heading positions in raw HTML to word indices
+function countWordsBefore(rawHTML, pos) {
+  const before = rawHTML.substring(0, pos);
+  const text = stripHTML(before);
+  return tokenize(text).length;
+}
+
+// Try to find a file in the zip, case-insensitively if needed
+function findZipFile(zip, targetPath) {
+  let f = zip.file(targetPath);
+  if (f) return f;
+  // Try URL-decoded version
+  try {
+    f = zip.file(decodeURIComponent(targetPath));
+    if (f) return f;
+  } catch(e) {}
+  // Case-insensitive fallback
+  const lower = targetPath.toLowerCase();
+  let match = null;
+  zip.forEach((relPath) => {
+    if (relPath.toLowerCase() === lower) match = relPath;
+  });
+  return match ? zip.file(match) : null;
+}
+
+// Parse EPUB — 100% regex-based metadata parsing (no DOMParser for XML files)
+async function parseEPUB(arrayBuffer) {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+
+  // Helper functions
+  function dirOf(p) {
+    return p.includes('/') ? p.substring(0, p.lastIndexOf('/') + 1) : '';
+  }
+  function filenameOf(p) {
+    return p.includes('/') ? p.substring(p.lastIndexOf('/') + 1) : p;
+  }
+  // Extract an XML attribute value by name (handles single & double quotes)
+  function xmlAttr(tag, name) {
+    const re = new RegExp(name + '\\s*=\\s*["\']([^"\']*)["\']', 'i');
+    const m = tag.match(re);
+    return m ? m[1] : '';
+  }
+
+  // ---- Step 1: Read container.xml to find OPF path ----
+  const containerFile = findZipFile(zip, 'META-INF/container.xml');
+  if (!containerFile) throw new Error('No container.xml — not a valid EPUB');
+  const containerXml = await containerFile.async('string');
+  const rfMatch = containerXml.match(/<rootfile[^>]+full-path\s*=\s*["']([^"']+)["']/i);
+  if (!rfMatch) throw new Error('No rootfile in container.xml');
+  const rootfilePath = rfMatch[1];
+  console.log('OPF path:', rootfilePath);
+
+  // ---- Step 2: Parse content.opf with regex ----
+  const opfFile = findZipFile(zip, rootfilePath);
+  if (!opfFile) throw new Error('Cannot find OPF: ' + rootfilePath);
+  const opfContent = await opfFile.async('string');
+  const baseDir = dirOf(rootfilePath);
+
+  // Build manifest: id -> {href, mediaType, properties}
+  const manifest = {};
+  const itemRegex = /<item\s[^>]*?\/?>/gi;
+  let itemMatch;
+  while ((itemMatch = itemRegex.exec(opfContent)) !== null) {
+    const tag = itemMatch[0];
+    const id = xmlAttr(tag, 'id');
+    const href = xmlAttr(tag, 'href');
+    const mediaType = xmlAttr(tag, 'media-type');
+    const properties = xmlAttr(tag, 'properties');
+    if (id) manifest[id] = { href, mediaType, properties };
+  }
+
+  // Build spine order
+  const spineItems = [];
+  const refRegex = /<itemref\s[^>]*?\/?>/gi;
+  let refMatch;
+  while ((refMatch = refRegex.exec(opfContent)) !== null) {
+    const idref = xmlAttr(refMatch[0], 'idref');
+    if (idref) spineItems.push(idref);
+  }
+
+  // Get book title
+  let title = '';
+  const titleMatch = opfContent.match(/<dc:title[^>]*>([\s\S]*?)<\/dc:title>/i)
+    || opfContent.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (titleMatch) title = stripHTML(titleMatch[1]).trim();
+
+  console.log(`EPUB: ${Object.keys(manifest).length} manifest items, ${spineItems.length} spine items, title="${title}"`);
+
+  // ---- Step 3: Build TOC from NCX and/or nav doc ----
+  const tocMap = {}; // fully resolved zip path -> chapter label
+
+  // Method A: NCX file
+  let ncxId = null;
+  for (const [id, info] of Object.entries(manifest)) {
+    if (info.mediaType === 'application/x-dtbncx+xml') { ncxId = id; break; }
+  }
+  if (ncxId && manifest[ncxId]) {
+    const ncxFullPath = resolvePath(baseDir, manifest[ncxId].href);
+    const ncxDir = dirOf(ncxFullPath);
+    const ncxFile = findZipFile(zip, ncxFullPath);
+    console.log(`NCX: path=${ncxFullPath}, found=${!!ncxFile}`);
+    if (ncxFile) {
+      const ncx = await ncxFile.async('string');
+      // Match each <navPoint> ... </navPoint> block (non-greedy, handles nesting by grabbing first text/content)
+      const npRegex = /<navPoint[^>]*>([\s\S]*?)<\/navPoint>/gi;
+      let npm;
+      while ((npm = npRegex.exec(ncx)) !== null) {
+        const block = npm[1];
+        const textM = block.match(/<text[^>]*>([\s\S]*?)<\/text>/i);
+        const contentM = block.match(/<content[^>]*>/i);
+        if (textM && contentM) {
+          const label = stripHTML(textM[1]).trim();
+          let src = xmlAttr(contentM[0], 'src');
+          src = src.split('#')[0]; // strip fragment
+          if (label && src) {
+            const resolved = resolvePath(ncxDir, src);
+            tocMap[resolved] = label;
+          }
+        }
+      }
+      console.log(`NCX entries found: ${Object.keys(tocMap).length}`);
+    }
+  }
+
+  // Method B: EPUB3 nav document
+  for (const [id, info] of Object.entries(manifest)) {
+    if ((info.properties || '').includes('nav')) {
+      const navFullPath = resolvePath(baseDir, info.href);
+      const navDir = dirOf(navFullPath);
+      const navFile = findZipFile(zip, navFullPath);
+      console.log(`Nav doc: path=${navFullPath}, found=${!!navFile}`);
+      if (navFile) {
+        const navContent = await navFile.async('string');
+        const aRegex = /<a\s[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+        let am;
+        while ((am = aRegex.exec(navContent)) !== null) {
+          let href = am[1].split('#')[0];
+          const label = stripHTML(am[2]).trim();
+          if (label && href && !tocMap[resolvePath(navDir, href)]) {
+            tocMap[resolvePath(navDir, href)] = label;
+          }
+        }
+      }
+      console.log(`Nav entries total: ${Object.keys(tocMap).length}`);
+      break;
+    }
+  }
+
+  // Method C: Brute-force scan if still empty
+  if (Object.keys(tocMap).length === 0) {
+    console.log('TOC empty, scanning zip for toc/nav files...');
+    const candidates = [];
+    zip.forEach((relPath) => {
+      const lower = relPath.toLowerCase();
+      if ((lower.includes('toc') || lower.includes('nav')) &&
+          (lower.endsWith('.ncx') || lower.endsWith('.xhtml') || lower.endsWith('.html') || lower.endsWith('.xml'))) {
+        candidates.push(relPath);
+      }
+    });
+    for (const cp of candidates) {
+      const f = zip.file(cp);
+      if (!f) continue;
+      const content = await f.async('string');
+      const cd = dirOf(cp);
+      // Try NCX-style
+      const tRegex = /<text[^>]*>([\s\S]*?)<\/text>[\s\S]*?<content[^>]+src\s*=\s*["']([^"']+)["']/gi;
+      let tm;
+      while ((tm = tRegex.exec(content)) !== null) {
+        const label = stripHTML(tm[1]).trim();
+        const src = tm[2].split('#')[0];
+        if (label && src) tocMap[resolvePath(cd, src)] = label;
+      }
+      // Try <a> links
+      const aRegex2 = /<a\s[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+      let am2;
+      while ((am2 = aRegex2.exec(content)) !== null) {
+        const href = am2[1].split('#')[0];
+        const label = stripHTML(am2[2]).trim();
+        if (label && href) {
+          const rp = resolvePath(cd, href);
+          if (!tocMap[rp]) tocMap[rp] = label;
+        }
+      }
+    }
+  }
+
+  // Log final TOC map
+  const tocEntries = Object.entries(tocMap);
+  console.log(`Final TOC map: ${tocEntries.length} entries`);
+  tocEntries.forEach(([k, v]) => console.log(`  "${v}" -> ${k}`));
+
+  // ---- Step 4: Extract text from spine items ----
+  const allWords = [];
+  const chapters = [];
+
+  // Pre-resolve all spine file paths
+  const spineFilePaths = spineItems.map(itemId => {
+    const info = manifest[itemId];
+    if (!info) return null;
+    const mt = info.mediaType || '';
+    if (!mt.includes('html') && !mt.includes('xml') && mt !== 'text/plain') return null;
+    return resolvePath(baseDir, info.href);
+  });
+
+  console.log('Spine paths:', spineFilePaths.filter(Boolean));
+
+  for (let si = 0; si < spineItems.length; si++) {
+    const filePath = spineFilePaths[si];
+    if (!filePath) continue;
+    const file = findZipFile(zip, filePath);
+    if (!file) continue;
+
+    try {
+      const content = await file.async('string');
+
+      // Extract body, strip style/script
+      let bodyContent = content;
+      const bodyMatch = content.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+      if (bodyMatch) bodyContent = bodyMatch[1];
+      bodyContent = bodyContent.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ');
+      bodyContent = bodyContent.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ');
+
+      const text = stripHTML(bodyContent);
+      const words = tokenize(text);
+      if (words.length === 0) continue;
+
+      // --- Match to TOC ---
+      let chapterTitle = null;
+
+      // 1. Exact resolved path
+      chapterTitle = tocMap[filePath] || null;
+
+      // 2. Filename match
+      if (!chapterTitle) {
+        const fn = filenameOf(filePath);
+        for (const [tp, tt] of tocEntries) {
+          if (filenameOf(tp) === fn) { chapterTitle = tt; break; }
+        }
+      }
+
+      // 3. Suffix match
+      if (!chapterTitle) {
+        for (const [tp, tt] of tocEntries) {
+          if (filePath.endsWith(tp) || tp.endsWith(filePath)) { chapterTitle = tt; break; }
+        }
+      }
+
+      // 4. Decoded match
+      if (!chapterTitle) {
+        try {
+          const dfp = decodeURIComponent(filePath);
+          for (const [tp, tt] of tocEntries) {
+            const dtp = decodeURIComponent(tp);
+            if (dfp === dtp || filenameOf(dfp) === filenameOf(dtp)) { chapterTitle = tt; break; }
+          }
+        } catch (e) {}
+      }
+
+      // 5. In-file heading scan — always run for large files to detect
+      //    single-file EPUBs where the entire book is one xhtml
+      //    This runs regardless of whether steps 1-4 found a TOC match,
+      //    because a single NCX entry like "AI-Driven Leader (Woods)-epub"
+      //    is useless when the file contains 20+ real chapter headings.
+      {
+        const headingRegex = /<h([1-4])[^>]*>([\s\S]*?)<\/h\1>/gi;
+        let hMatch;
+        const headingsFound = [];
+        while ((hMatch = headingRegex.exec(bodyContent)) !== null) {
+          const level = parseInt(hMatch[1]);
+          let title = stripHTML(hMatch[2]).trim();
+          if (!title || title.length === 0) continue;
+          if (/^table\s+of\s+contents$/i.test(title)) continue;
+          if (title.length > 80) title = title.substring(0, 77) + '...';
+          headingsFound.push({ title, position: hMatch.index, level });
+        }
+
+        if (headingsFound.length > 1) {
+          // Multiple headings in one file — create a chapter for each
+          for (let hi = 0; hi < headingsFound.length; hi++) {
+            const h = headingsFound[hi];
+            const start = h.position;
+            const end = hi + 1 < headingsFound.length ? headingsFound[hi + 1].position : bodyContent.length;
+            const segment = bodyContent.substring(start, end);
+            const segText = stripHTML(segment);
+            const segWords = tokenize(segText);
+            if (segWords.length >= 2 || h.level <= 2) {
+              chapters.push({ title: h.title, wordIndex: allWords.length + countWordsBefore(bodyContent, start) });
+            }
+          }
+          allWords.push(...words);
+          continue; // skip the normal single-chapter push below
+        }
+      }
+
+      // 6. Single-heading or no-heading fallback
+      if (!chapterTitle) {
+        const hm = bodyContent.match(/<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/i);
+        if (hm) {
+          chapterTitle = stripHTML(hm[1]).trim();
+          if (chapterTitle.length > 80) chapterTitle = chapterTitle.substring(0, 77) + '...';
+        }
+      }
+
+      // 7. Section number fallback
+      if (!chapterTitle && words.length > 50) {
+        chapterTitle = `Section ${chapters.length + 1}`;
+      }
+
+      if (chapterTitle && chapterTitle.length > 0) {
+        chapters.push({ title: chapterTitle, wordIndex: allWords.length });
+      }
+      allWords.push(...words);
+    } catch (e) { console.warn('Error parsing spine item:', filePath, e); }
+  }
+
+  if (chapters.length === 0) {
+    chapters.push({ title: 'Start', wordIndex: 0 });
+  } else if (chapters[0].wordIndex > 50) {
+    // Add a "Start" entry if there's substantial content before the first chapter
+    chapters.unshift({ title: 'Start', wordIndex: 0 });
+  }
+
+  console.log(`EPUB loaded: "${title}", ${allWords.length} words, ${chapters.length} chapters`);
+  return { words: allWords, chapters, title };
+}
+
+// Parse PDF
+async function parsePDF(arrayBuffer) {
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const allWords = [];
+  const chapters = [];
+  const numPages = pdf.numPages;
+
+  // Track cumulative word count at the START of each page (1-indexed)
+  // pageStartWord[i] = word index where page i begins
+  const pageStartWord = new Array(numPages + 1).fill(0);
+
+  // Create a chapter every ~20 pages or so as a rough TOC
+  const chapterInterval = Math.max(1, Math.ceil(numPages / 20));
+
+  for (let i = 1; i <= numPages; i++) {
+    pageStartWord[i] = allWords.length;
+
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items.map(item => item.str).join(' ');
+    const words = tokenize(pageText);
+
+    if (words.length === 0) continue;
+
+    if (i === 1 || i % chapterInterval === 0) {
+      chapters.push({ title: `Page ${i}`, wordIndex: allWords.length });
+    }
+
+    allWords.push(...words);
+  }
+
+  if (chapters.length === 0) {
+    chapters.push({ title: 'Start', wordIndex: 0 });
+  }
+
+  // Try to get PDF outline for better TOC
+  try {
+    const outline = await pdf.getOutline();
+    if (outline && outline.length > 0) {
+      // Replace page-based chapters with real outline
+      chapters.length = 0;
+      for (const item of outline) {
+        let pageIndex = 0;
+        if (item.dest) {
+          try {
+            const dest = typeof item.dest === 'string'
+              ? await pdf.getDestination(item.dest)
+              : item.dest;
+            if (dest) {
+              const ref = dest[0];
+              pageIndex = await pdf.getPageIndex(ref);
+            }
+          } catch (e) { /* skip */ }
+        }
+        // Use exact cumulative word count for this page
+        const pageNum = Math.min(pageIndex + 1, numPages);
+        const wordIdx = pageStartWord[pageNum] || 0;
+        chapters.push({ title: item.title || `Section`, wordIndex: Math.min(wordIdx, Math.max(0, allWords.length - 1)) });
+      }
+      if (chapters.length === 0) {
+        chapters.push({ title: 'Start', wordIndex: 0 });
+      }
+    }
+  } catch (e) { /* keep page-based chapters */ }
+
+  return { words: allWords, chapters, title: '' };
+}
+
+// --- Load File ---
+async function loadFile(file) {
+  const loading = document.getElementById('loading-msg');
+  loading.style.display = 'flex';
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    let result;
+
+    if (file.name.toLowerCase().endsWith('.epub')) {
+      result = await parseEPUB(arrayBuffer);
+    } else if (file.name.toLowerCase().endsWith('.pdf')) {
+      result = await parsePDF(arrayBuffer);
+    } else {
+      alert('Please upload an EPUB or PDF file.');
+      loading.style.display = 'none';
+      return;
+    }
+
+    state.words = result.words;
+    state.chapters = result.chapters;
+    state.currentIndex = 0;
+    state.fileName = file.name;
+
+    if (state.words.length === 0) {
+      alert('No readable text found in this file.');
+      loading.style.display = 'none';
+      return;
+    }
+
+    // Set title
+    const bookTitle = result.title || file.name.replace(/\.(epub|pdf)$/i, '');
+    document.getElementById('book-title').textContent = bookTitle;
+
+    // Build TOC
+    buildTOC();
+
+    // Switch to reader screen
+    document.getElementById('upload-screen').style.display = 'none';
+    document.getElementById('reader-screen').style.display = 'flex';
+
+    // Show first word
+    showWord();
+    updateUI();
+  } catch (err) {
+    console.error(err);
+    alert('Error parsing file: ' + err.message);
+  }
+
+  loading.style.display = 'none';
+}
+
+function buildTOC() {
+  const list = document.getElementById('toc-list');
+  list.innerHTML = '';
+  state.chapters.forEach((ch, i) => {
+    const item = document.createElement('div');
+    item.className = 'toc-item';
+    item.textContent = ch.title;
+    item.addEventListener('click', () => {
+      jumpToWord(ch.wordIndex);
+      closeTOC();
+      if (state.playing) {
+        pause();
+        play();
+      }
+    });
+    list.appendChild(item);
+  });
+}
+
+function openTOC() {
+  document.getElementById('toc-panel').classList.add('open');
+  document.getElementById('toc-overlay').classList.add('open');
+}
+
+function closeTOC() {
+  document.getElementById('toc-panel').classList.remove('open');
+  document.getElementById('toc-overlay').classList.remove('open');
+}
+
+// --- Event Listeners ---
+
+// Upload zone
+const uploadZone = document.getElementById('upload-zone');
+const uploadInput = document.getElementById('upload-input');
+
+uploadZone.addEventListener('click', () => uploadInput.click());
+uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+uploadZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+});
+uploadInput.addEventListener('change', (e) => { if (e.target.files.length) loadFile(e.target.files[0]); });
+
+// Controls
+document.getElementById('play-btn').addEventListener('click', togglePlay);
+document.getElementById('skip-back-10').addEventListener('click', () => skipSeconds(-10));
+document.getElementById('skip-fwd-10').addEventListener('click', () => skipSeconds(10));
+document.getElementById('skip-back-30').addEventListener('click', () => skipSeconds(-30));
+document.getElementById('skip-fwd-30').addEventListener('click', () => skipSeconds(30));
+
+// Speed slider
+const slider = document.getElementById('speed-slider');
+slider.addEventListener('input', () => setWPM(parseInt(slider.value)));
+
+// TOC
+document.getElementById('toc-btn').addEventListener('click', openTOC);
+document.getElementById('toc-close').addEventListener('click', closeTOC);
+document.getElementById('toc-overlay').addEventListener('click', closeTOC);
+
+// Progress bar click to seek
+document.getElementById('progress-container').addEventListener('click', (e) => {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const pct = (e.clientX - rect.left) / rect.width;
+  const targetWord = Math.round(pct * state.words.length);
+  jumpToWord(targetWord);
+});
+
+// New file button
+document.getElementById('new-file-btn').addEventListener('click', () => {
+  pause();
+  state.words = [];
+  state.chapters = [];
+  state.currentIndex = 0;
+  document.getElementById('upload-screen').style.display = 'flex';
+  document.getElementById('reader-screen').style.display = 'none';
+  uploadInput.value = '';
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (document.getElementById('reader-screen').style.display === 'none') return;
+
+  switch (e.code) {
+    case 'Space':
+      e.preventDefault();
+      togglePlay();
+      break;
+    case 'ArrowLeft':
+      e.preventDefault();
+      skipSeconds(e.shiftKey ? -30 : -10);
+      break;
+    case 'ArrowRight':
+      e.preventDefault();
+      skipSeconds(e.shiftKey ? 30 : 10);
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      setWPM(Math.min(900, state.wpm + 25));
+      break;
+    case 'ArrowDown':
+      e.preventDefault();
+      setWPM(Math.max(100, state.wpm - 25));
+      break;
+    case 'KeyT':
+      if (e.ctrlKey || e.metaKey) return;
+      openTOC();
+      break;
+    case 'Escape':
+      closeTOC();
+      break;
+  }
+});
+
+// Show chapter label on hover over progress bar
+const progressContainer = document.getElementById('progress-container');
+const chapterLabel = document.getElementById('chapter-label');
+
+progressContainer.addEventListener('mouseenter', () => chapterLabel.classList.add('visible'));
+progressContainer.addEventListener('mouseleave', () => chapterLabel.classList.remove('visible'));
+progressContainer.addEventListener('mousemove', (e) => {
+  const rect = progressContainer.getBoundingClientRect();
+  const pct = (e.clientX - rect.left) / rect.width;
+  const wordIdx = Math.round(pct * state.words.length);
+
+  let label = '';
+  for (let i = state.chapters.length - 1; i >= 0; i--) {
+    if (wordIdx >= state.chapters[i].wordIndex) {
+      label = state.chapters[i].title;
+      break;
+    }
+  }
+  chapterLabel.textContent = label;
+  chapterLabel.style.left = e.clientX - rect.left + 'px';
+  chapterLabel.style.transform = 'translateX(-50%)';
+});
+</script>
+</body>
+</html>
