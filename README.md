@@ -2,7 +2,7 @@
 
 Speed read EPUBs and PDFs one word at a time using the Spritz RSVP technique. Runs entirely in your browser — no data leaves your device.
 
-**[Try it live →](https://yourusername.github.io/spritz-reader/)**
+**[Try it live →]((https://kbedfordconsulting.github.io/spritz-reader/))**
 
 ## How It Works
 
