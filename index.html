@@ -31,6 +31,8 @@
   }
 
   body.reading { height: 100vh; overflow: hidden; }
+  @media (max-width: 600px) { body.reading { height: auto; min-height: 100vh; overflow-y: auto; } }
+  @media (max-height: 500px) { body.reading { height: auto; min-height: 100vh; overflow-y: auto; } }
 
   /* --- Upload Screen --- */
   #upload-screen {
@@ -452,6 +454,7 @@
 
   /* Responsive */
   @media (max-width: 600px) {
+    #reader-screen { height: auto; min-height: 100vh; }
     .rsvp-word-wrapper { font-size: 2.4rem; }
     .top-bar { padding: 8px 10px; }
     .top-bar .title { display: none; }
