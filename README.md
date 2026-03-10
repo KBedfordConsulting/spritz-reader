@@ -13,8 +13,10 @@ Drop in an EPUB or PDF file and hit play. Words appear one at a time at a fixed 
 - **100–900 WPM** adjustable speed with smart punctuation pausing
 - **Chapter navigation** via Table of Contents sidebar
 - **Skip controls** — jump forward/back by 10 or 30 seconds
+- **Tap to play/pause** — tap or click the reading area to toggle playback
 - **Keyboard shortcuts** — Space (play/pause), arrows (skip/speed), T (TOC)
 - **Progress tracking** — clickable progress bar, time remaining, chapter labels
+- **Mobile-friendly** — responsive layout that works in both portrait and landscape
 - **Fully private** — all parsing happens locally, nothing is uploaded anywhere
 
 ## Supported Formats
@@ -26,10 +28,11 @@ Drop in an EPUB or PDF file and hit play. Words appear one at a time at a fixed 
 
 Open `index.html` in any modern browser. That's it — no install, no server, no build step.
 
-## Keyboard Shortcuts
+## Controls
 
-| Key | Action |
-|-----|--------|
+| Input | Action |
+|-------|--------|
+| Tap / click reading area | Play / Pause |
 | `Space` | Play / Pause |
 | `←` / `→` | Skip back / forward 10s |
 | `Shift+←` / `Shift+→` | Skip back / forward 30s |
@@ -37,3 +40,6 @@ Open `index.html` in any modern browser. That's it — no install, no server, no
 | `T` | Open Table of Contents |
 | `Escape` | Close TOC |
 
+## Support
+
+If you find this useful, you can [buy me a coffee](https://buymeacoffee.com/katiebedford).
